@@ -1,8 +1,8 @@
 # Skill Loader MCP Server
 
-[![npm version](https://badge.fury.io/js/%40kiro%2Fskill-loader-mcp-server.svg)](https://www.npmjs.com/package/@kiro/skill-loader-mcp-server)
+[![npm version](https://badge.fury.io/js/%40goldzulu%2Fskill-loader-mcp-server.svg)](https://www.npmjs.com/package/@goldzulu/skill-loader-mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node.js Version](https://img.shields.io/node/v/@kiro/skill-loader-mcp-server.svg)](https://nodejs.org)
+[![Node.js Version](https://img.shields.io/node/v/@goldzulu/skill-loader-mcp-server.svg)](https://nodejs.org)
 
 An MCP (Model Context Protocol) server for discovering, fetching, validating, and converting Claude skills from skills.sh and GitHub repositories.
 
@@ -19,13 +19,13 @@ An MCP (Model Context Protocol) server for discovering, fetching, validating, an
 ### Global Installation
 
 ```bash
-npm install -g @kiro/skill-loader-mcp-server
+npm install -g @goldzulu/skill-loader-mcp-server
 ```
 
 ### Local Installation
 
 ```bash
-npm install @kiro/skill-loader-mcp-server
+npm install @goldzulu/skill-loader-mcp-server
 ```
 
 ## Usage
@@ -39,7 +39,7 @@ Add to your `mcp.json`:
   "mcpServers": {
     "skill-loader": {
       "command": "npx",
-      "args": ["-y", "@kiro/skill-loader-mcp-server"],
+      "args": ["-y", "@goldzulu/skill-loader-mcp-server"],
       "description": "Skill Loader MCP Server for managing Claude skills"
     }
   }

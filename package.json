@@ -1,5 +1,5 @@
 {
-  "name": "@kiro/skill-loader-mcp-server",
+  "name": "@goldzulu/skill-loader-mcp-server",
   "version": "1.0.0",
   "description": "MCP server for discovering and converting Claude skills",
   "main": "dist/index.js",
