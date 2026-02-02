@@ -1,5 +1,9 @@
 # Skill Loader MCP Server
 
+[![npm version](https://badge.fury.io/js/%40kiro%2Fskill-loader-mcp-server.svg)](https://www.npmjs.com/package/@kiro/skill-loader-mcp-server)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js Version](https://img.shields.io/node/v/@kiro/skill-loader-mcp-server.svg)](https://nodejs.org)
+
 An MCP (Model Context Protocol) server for discovering, fetching, validating, and converting Claude skills from skills.sh and GitHub repositories.
 
 ## Features
@@ -296,4 +300,4 @@ Contributions are welcome! Please open an issue or submit a pull request.
 
 ## Support
 
-For issues and questions, please open an issue on GitHub.
+For issues and questions, please open an issue on [GitHub](https://github.com/goldzulu/skill-loader-mcp-server/issues).
