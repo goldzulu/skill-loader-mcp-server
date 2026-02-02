@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "skill-loader": {
+      "command": "npx",
+      "args": ["-y", "@kiro/skill-loader-mcp-server"],
+      "description": "Skill Loader MCP Server for managing Claude skills"
+    }
+  }
+}
