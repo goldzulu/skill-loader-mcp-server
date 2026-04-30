@@ -4,15 +4,22 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js Version](https://img.shields.io/node/v/@goldzulu/skill-loader-mcp-server.svg)](https://nodejs.org)
 
-An MCP (Model Context Protocol) server for discovering, fetching, validating, and converting Claude skills from skills.sh and GitHub repositories.
+An MCP (Model Context Protocol) server for discovering, fetching, validating, and converting Claude skills from the [skills.sh](https://skills.sh) marketplace and GitHub repositories.
+
+## What's New in v1.1.0
+
+- **skills.sh API integration**: Search uses the `/api/search?q=<query>` endpoint — no authentication needed
+- **Authenticated endpoints**: `list_skills` and `get_leaderboard` use the `/api/v1/skills` endpoint (requires `SKILLS_SH_API_KEY`)
+- **Smarter Power conversion**: `convert_to_power` now generates `mcp.json` when a skill has dependencies or tool references, and creates a `steering/` directory when a skill has 3+ complex sections
+- **MCP SDK upgrade**: Updated to `@modelcontextprotocol/sdk` v1.29
 
 ## Features
 
-- 🔍 **Discover Skills**: Browse and search the skills.sh marketplace
-- 📥 **Fetch Skills**: Download skill content from GitHub
-- 🔒 **Security Validation**: Scan skills for dangerous patterns
-- 🔄 **Format Conversion**: Convert skills to Kiro steering files or powers
-- ⚡ **Complete Workflow**: Import skills with a single command
+- **Discover Skills** — Browse and search the skills.sh marketplace via its public search API
+- **Fetch Skills** — Download raw skill content directly from GitHub
+- **Security Validation** — Scan skills for dangerous commands, suspicious patterns, and code injection
+- **Format Conversion** — Convert skills to Kiro steering files or power format (with optional `mcp.json` and `steering/` directory)
+- **Complete Workflow** — Import skills end-to-end with a single command (fetch + validate + convert)
 
 ## Installation
 
@@ -28,7 +35,13 @@ npm install -g @goldzulu/skill-loader-mcp-server
 npm install @goldzulu/skill-loader-mcp-server
 ```
 
-## Usage
+## Configuration
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SKILLS_SH_API_KEY` | For `list_skills` and `get_leaderboard` only | API key for the skills.sh authenticated `/api/v1/skills` endpoint. Request from Vercel if needed. Not required for `search_skills`. |
 
 ### With Kiro
 
@@ -40,6 +53,9 @@ Add to your `mcp.json`:
     "skill-loader": {
       "command": "npx",
       "args": ["-y", "@goldzulu/skill-loader-mcp-server"],
+      "env": {
+        "SKILLS_SH_API_KEY": "your-api-key-here"
+      },
       "description": "Skill Loader MCP Server for managing Claude skills"
     }
   }
@@ -54,11 +70,16 @@ Add to your Claude Desktop configuration:
 {
   "mcpServers": {
     "skill-loader": {
-      "command": "skill-loader-mcp-server"
+      "command": "skill-loader-mcp-server",
+      "env": {
+        "SKILLS_SH_API_KEY": "your-api-key-here"
+      }
     }
   }
 }
 ```
+
+The `env` block is optional — only needed if you want to use `list_skills` or `get_leaderboard`.
 
 ### Standalone
 
@@ -68,25 +89,9 @@ skill-loader-mcp-server
 
 ## Available Tools
 
-### 1. list_skills
+### 1. search_skills
 
-List all available skills from skills.sh with pagination.
-
-**Parameters:**
-- `page` (optional): Page number (default: 1)
-- `pageSize` (optional): Results per page (default: 50, max: 100)
-
-**Example:**
-```json
-{
-  "tool": "list_skills",
-  "arguments": { "page": 1, "pageSize": 10 }
-}
-```
-
-### 2. search_skills
-
-Search for skills by keyword.
+Search for skills by keyword using the skills.sh search API. **No authentication required.**
 
 **Parameters:**
 - `query` (required): Search query
@@ -100,12 +105,28 @@ Search for skills by keyword.
 }
 ```
 
-### 3. get_leaderboard
+### 2. list_skills
 
-Get trending or top-installed skills.
+List all available skills from skills.sh with pagination. **Requires `SKILLS_SH_API_KEY`.**
 
 **Parameters:**
-- `timeframe` (optional): 'all' or '24h' (default: 'all')
+- `page` (optional): Page number (default: 1)
+- `pageSize` (optional): Results per page (default: 50, max: 100)
+
+**Example:**
+```json
+{
+  "tool": "list_skills",
+  "arguments": { "page": 1, "pageSize": 10 }
+}
+```
+
+### 3. get_leaderboard
+
+Get trending or top-installed skills. **Requires `SKILLS_SH_API_KEY`.**
+
+**Parameters:**
+- `timeframe` (optional): `'all'` or `'24h'` (default: `'all'`)
 - `limit` (optional): Max results (default: 20, max: 50)
 
 **Example:**
@@ -121,7 +142,7 @@ Get trending or top-installed skills.
 Fetch raw skill content from GitHub.
 
 **Parameters:**
-- `identifier` (required): Skill name or owner/repo format
+- `identifier` (required): Skill name or `owner/repo` format
 
 **Example:**
 ```json
@@ -163,7 +184,7 @@ Convert skill to Kiro steering file format.
 {
   "tool": "convert_to_steering",
   "arguments": {
-    "content": "---\nname: Test\n---\n\n# Test",
+    "content": "---\nname: Test\ndescription: A test skill\n---\n\n# Test",
     "sourceUrl": "https://example.com/skill.md"
   }
 }
@@ -171,7 +192,7 @@ Convert skill to Kiro steering file format.
 
 ### 7. convert_to_power
 
-Convert skill to Kiro power format.
+Convert skill to Kiro power format. Generates `mcp.json` when the skill has dependencies or tools, and a `steering/` directory when the skill has 3+ complex sections.
 
 **Parameters:**
 - `content` (required): Skill content
@@ -182,7 +203,7 @@ Convert skill to Kiro power format.
 {
   "tool": "convert_to_power",
   "arguments": {
-    "content": "---\nname: Test\n---\n\n# Test",
+    "content": "---\nname: Test\ndescription: A test skill\n---\n\n# Test",
     "sourceUrl": "https://example.com/skill.md"
   }
 }
@@ -194,7 +215,7 @@ Complete import workflow (fetch + validate + convert).
 
 **Parameters:**
 - `identifier` (required): Skill identifier
-- `outputFormat` (required): 'steering' or 'power'
+- `outputFormat` (required): `'steering'` or `'power'`
 - `skipValidation` (optional): Skip security validation (default: false)
 
 **Example:**
@@ -208,58 +229,23 @@ Complete import workflow (fetch + validate + convert).
 }
 ```
 
-## Quick Start
-
-### 1. Install the package
-
-```bash
-npm install -g @kiro/skill-loader-mcp-server
-```
-
-### 2. Configure in Kiro
-
-Add to your `mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "skill-loader": {
-      "command": "skill-loader-mcp-server"
-    }
-  }
-}
-```
-
-### 3. Use the tools
-
-Once configured, you can use any of the 9 tools through your MCP client.
-
-**Example workflow:**
-1. Search for skills: `search_skills` with query "pdf"
-2. Fetch a skill: `fetch_skill` with identifier "anthropics/pdf-extractor"
-3. Import the skill: `import_skill` with identifier and output format
-
-## Examples
-
-See [examples/usage-examples.md](examples/usage-examples.md) for detailed examples of all tools.
-
 ## Security
 
 The server includes security validation that scans for:
-- Dangerous commands (rm -rf, sudo, eval, exec)
-- Suspicious file operations (/etc/, /usr/, /bin/)
-- Code injection patterns (${...}, $(...))
+- Dangerous commands (`rm -rf`, `sudo`, `eval`, `exec`)
+- Suspicious file operations (`/etc/`, `/usr/`, `/bin/`)
+- Code injection patterns (`${...}`, `$(...)`)
 - Untrusted sources (non-GitHub URLs)
 
 Skills that fail security validation will be blocked from import unless explicitly skipped.
 
 ## Caching
 
-The server caches the skills.sh directory for 1 hour to reduce API calls and improve performance. The cache is stored in memory and is automatically refreshed when expired.
+The server caches skills.sh search results in memory for 1 hour to reduce API calls and improve performance. The cache is automatically refreshed when expired.
 
 ## Error Handling
 
-All tools return errors in a consistent format with descriptive messages. Common error types:
+All tools return errors in a consistent JSON format with descriptive messages. Common error types:
 - **Network errors**: Connection issues, timeouts, HTTP errors
 - **Validation errors**: Security issues, format problems
 - **Parsing errors**: YAML syntax errors, invalid markdown
@@ -296,7 +282,7 @@ MIT
 
 ## Contributing
 
-Contributions are welcome! Please open an issue or submit a pull request.
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## Support
 

@@ -17,7 +17,7 @@ async function main() {
 
     // Log to stderr (stdout is used for MCP protocol)
     console.error('Skill Loader MCP Server started');
-    console.error('Version: 1.0.0');
+    console.error('Version: 1.1.1');
     console.error('Listening on stdio...');
 
     // Handle graceful shutdown
