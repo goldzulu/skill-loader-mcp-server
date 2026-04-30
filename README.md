@@ -1,6 +1,6 @@
 # Skill Loader MCP Server
 
-[![npm version](https://badge.fury.io/js/%40goldzulu%2Fskill-loader-mcp-server.svg)](https://www.npmjs.com/package/@goldzulu/skill-loader-mcp-server)
+[![npm version](https://img.shields.io/npm/v/%40goldzulu/skill-loader-mcp-server)](https://www.npmjs.com/package/@goldzulu/skill-loader-mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js Version](https://img.shields.io/node/v/@goldzulu/skill-loader-mcp-server.svg)](https://nodejs.org)
 
