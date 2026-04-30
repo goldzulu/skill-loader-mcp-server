@@ -1,25 +1,26 @@
 /**
  * Skill Resolver
- * 
+ *
  * Resolves skill identifiers to GitHub URLs.
+ * Uses the skills.sh search API for name-based lookups.
  */
 
-import { ResolvedSkill, SkillShEntry } from './types.js';
+import { ResolvedSkill, SkillShEntry, SkillsShSearchResponse, SkillsShSearchEntry } from './types.js';
 import { NetworkError, SkillResolutionError, ErrorLogger } from './errors.js';
 
 export class SkillResolver {
   /**
    * Resolve a skill identifier to a GitHub URL
-   * 
+   *
    * Resolution Logic:
    * 1. If identifier contains "/": Treat as owner/repo format
    *    - Parse as `owner/repo` or `owner/repo/skill-name`
    *    - Construct GitHub URL directly
    *    - Source: 'github'
-   * 
-   * 2. If identifier is simple name: Query skills.sh
-   *    - Search skills.sh directory for matching skill
-   *    - Get owner/repo from skills.sh metadata
+   *
+   * 2. If identifier is simple name: Query skills.sh search API
+   *    - Search skills.sh API for matching skill
+   *    - Get owner/repo from source field
    *    - Construct GitHub URL from metadata
    *    - Source: 'skills.sh'
    */
@@ -44,7 +45,7 @@ export class SkillResolver {
   private resolveFromGitHub(identifier: string): ResolvedSkill {
     try {
       const parts = identifier.split('/').filter(part => part.length > 0);
-      
+
       // Validate we have at least 2 parts
       if (parts.length < 2) {
         const error = new SkillResolutionError(
@@ -56,7 +57,7 @@ export class SkillResolver {
         ErrorLogger.log(error);
         throw error;
       }
-      
+
       if (parts.length === 2) {
         // Format: owner/skill-name
         // Assume this is short format like "vercel-labs/vercel-react-best-practices"
@@ -65,7 +66,7 @@ export class SkillResolver {
         const repo = 'agent-skills';
         const skillPath = `skills/${skillName}`;
         const fullUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/${skillPath}/SKILL.md`;
-        
+
         return {
           owner,
           repo,
@@ -78,7 +79,7 @@ export class SkillResolver {
         const owner = parts[0];
         const repo = parts[1];
         const remainingParts = parts.slice(2);
-        
+
         // If the path already includes 'skills/', use it as-is
         // Otherwise, prepend 'skills/' to the skill name
         let skillPath: string;
@@ -87,9 +88,9 @@ export class SkillResolver {
         } else {
           skillPath = `skills/${remainingParts.join('/')}`;
         }
-        
+
         const fullUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/${skillPath}/SKILL.md`;
-        
+
         return {
           owner,
           repo,
@@ -113,56 +114,60 @@ export class SkillResolver {
     }
   }
 
-  // Cache for skills.sh directory (1 hour TTL)
-  private skillsCache: { data: SkillShEntry[]; timestamp: number } | null = null;
+  // Cache for skills.sh search results (1 hour TTL)
+  private searchCache: Map<string, { data: SkillShEntry[]; timestamp: number }> = new Map();
   private readonly CACHE_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
 
   /**
-   * Resolve a skill from skills.sh directory
+   * Resolve a skill from skills.sh using the search API
    */
   private async resolveFromSkillsSh(identifier: string): Promise<ResolvedSkill> {
     try {
-      // Fetch skills directory
-      const skills = await this.fetchSkillsDirectory();
-      
+      // Search for the skill via the API
+      const results = await this.searchSkillsSh(identifier);
+
       // Search for matching skill (case-insensitive)
       const normalizedIdentifier = identifier.toLowerCase();
-      const matches = skills.filter(skill => 
-        skill.name.toLowerCase() === normalizedIdentifier ||
+
+      // Try exact match first
+      const exactMatch = results.find(skill =>
+        skill.name.toLowerCase() === normalizedIdentifier
+      );
+
+      if (exactMatch) {
+        return this.skillShEntryToResolvedSkill(exactMatch);
+      }
+
+      // Try partial match
+      const matches = results.filter(skill =>
         skill.name.toLowerCase().includes(normalizedIdentifier)
       );
-      
+
       if (matches.length === 0) {
         const error = new SkillResolutionError(
           `Skill "${identifier}" not found in skills.sh directory`,
           identifier,
           ['Try using owner/repo format instead', 'Search skills.sh for available skills'],
-          { searchedIn: 'skills.sh', totalSkills: skills.length }
+          { searchedIn: 'skills.sh', totalResults: results.length }
         );
         ErrorLogger.log(error);
         throw error;
       }
-      
-      if (matches.length > 1) {
-        const exactMatch = matches.find(s => s.name.toLowerCase() === normalizedIdentifier);
-        if (exactMatch) {
-          return this.skillShEntryToResolvedSkill(exactMatch);
-        }
-        
-        // Multiple matches - provide helpful error
-        const matchList = matches.map(s => `${s.owner}/${s.repo}/${s.name}`);
-        const error = new SkillResolutionError(
-          `Multiple skills match "${identifier}"`,
-          identifier,
-          matchList,
-          { matchCount: matches.length }
-        );
-        ErrorLogger.log(error);
-        throw error;
+
+      if (matches.length === 1) {
+        return this.skillShEntryToResolvedSkill(matches[0]);
       }
-      
-      // Single match found
-      return this.skillShEntryToResolvedSkill(matches[0]);
+
+      // Multiple matches - provide helpful error
+      const matchList = matches.map(s => `${s.owner}/${s.repo}/${s.name}`);
+      const error = new SkillResolutionError(
+        `Multiple skills match "${identifier}"`,
+        identifier,
+        matchList,
+        { matchCount: matches.length }
+      );
+      ErrorLogger.log(error);
+      throw error;
     } catch (error) {
       if (error instanceof SkillResolutionError || error instanceof NetworkError) {
         throw error;
@@ -184,7 +189,7 @@ export class SkillResolver {
   private skillShEntryToResolvedSkill(entry: SkillShEntry): ResolvedSkill {
     const skillPath = `skills/${entry.name}`;
     const fullUrl = `https://raw.githubusercontent.com/${entry.owner}/${entry.repo}/main/${skillPath}/SKILL.md`;
-    
+
     return {
       owner: entry.owner,
       repo: entry.repo,
@@ -193,28 +198,66 @@ export class SkillResolver {
       source: 'skills.sh',
       metadata: {
         installs: entry.installs,
-        trending: false // Will be set by getLeaderboard if needed
+        trending: false
       }
     };
   }
 
   /**
-   * Fetch and cache the skills directory from skills.sh
+   * Parse the `source` field from the search API (e.g. "anthropics/skills") into owner and repo
    */
-  private async fetchSkillsDirectory(): Promise<SkillShEntry[]> {
-    // Check cache
-    if (this.skillsCache && (Date.now() - this.skillsCache.timestamp) < this.CACHE_TTL) {
-      return this.skillsCache.data;
+  private parseSource(source: string): { owner: string; repo: string } {
+    const parts = source.split('/');
+    if (parts.length >= 2) {
+      return { owner: parts[0], repo: parts[1] };
     }
-    
+    // Fallback: use source as owner, default repo
+    return { owner: source, repo: 'agent-skills' };
+  }
+
+  /**
+   * Convert a skills.sh search API entry to a SkillShEntry
+   */
+  private searchEntryToSkillShEntry(entry: SkillsShSearchEntry): SkillShEntry {
+    const { owner, repo } = this.parseSource(entry.source);
+    return {
+      name: entry.name,
+      owner,
+      repo,
+      installs: entry.installs,
+      id: entry.id,
+      skillId: entry.skillId,
+      source: entry.source,
+      description: `${entry.name} from ${entry.source}`,
+      metadata: {
+        trending: false
+      }
+    };
+  }
+
+  /**
+   * Search skills.sh for skills matching a query using the search API
+   *
+   * Uses GET https://skills.sh/api/search?q=<query>
+   */
+  async searchSkillsSh(query: string): Promise<SkillShEntry[]> {
+    const cacheKey = `search:${query.toLowerCase()}`;
+
+    // Check cache
+    const cached = this.searchCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp) < this.CACHE_TTL) {
+      return cached.data;
+    }
+
     try {
-      // Fetch the skills.sh homepage HTML
-      const response = await fetch('https://skills.sh');
+      const url = `https://skills.sh/api/search?q=${encodeURIComponent(query)}`;
+      const response = await fetch(url);
+
       if (!response.ok) {
         const error = new NetworkError(
-          'Failed to fetch skills.sh directory',
-          'https://skills.sh',
-          { 
+          'Failed to search skills.sh',
+          url,
+          {
             statusCode: response.status,
             context: { statusText: response.statusText }
           }
@@ -222,36 +265,35 @@ export class SkillResolver {
         ErrorLogger.log(error);
         throw error;
       }
-      
-      const html = await response.text();
-      
-      // Parse skills from HTML
-      const skills = this.parseSkillsFromHTML(html);
-      
+
+      const data = await response.json() as SkillsShSearchResponse;
+
+      // Convert search entries to SkillShEntry format
+      const skills = data.skills.map(entry => this.searchEntryToSkillShEntry(entry));
+
       // Update cache
-      this.skillsCache = {
+      this.searchCache.set(cacheKey, {
         data: skills,
         timestamp: Date.now()
-      };
-      
+      });
+
       return skills;
     } catch (error) {
-      // If cache exists but is stale, return it anyway
-      if (this.skillsCache) {
-        console.warn('Failed to fetch fresh skills.sh data, using stale cache:', error);
-        return this.skillsCache.data;
+      // Return stale cache if available
+      if (cached) {
+        console.warn('Failed to fetch fresh skills.sh search data, using stale cache:', error);
+        return cached.data;
       }
-      
-      // Wrap and re-throw if not already a NetworkError
+
       if (error instanceof NetworkError) {
         throw error;
       }
-      
+
       const wrappedError = new NetworkError(
-        'Failed to fetch skills.sh directory',
-        'https://skills.sh',
-        { 
-          context: { 
+        'Failed to search skills.sh',
+        `https://skills.sh/api/search?q=${encodeURIComponent(query)}`,
+        {
+          context: {
             originalError: error instanceof Error ? error.message : String(error),
             suggestion: 'Check your internet connection and try again'
           }
@@ -263,129 +305,50 @@ export class SkillResolver {
   }
 
   /**
-   * Parse skills from skills.sh HTML
-   * Extracts skill entries from the leaderboard
+   * Get the leaderboard from skills.sh
+   *
+   * Requires SKILLS_SH_API_KEY env var for the v1 paginated API.
+   * Falls back to search API with a broad query if no key is set.
    */
-  private parseSkillsFromHTML(html: string): SkillShEntry[] {
-    const skills: SkillShEntry[] = [];
-    
-    // Match skill entries in the HTML
-    // Pattern: href="/owner/repo/skill-name" with install count
-    const skillPattern = /<a[^>]*href="\/([^/]+)\/([^/]+)\/([^"]+)"[^>]*>[\s\S]*?<h3[^>]*>([^<]+)<\/h3>[\s\S]*?<p[^>]*>([^<]+)<\/p>[\s\S]*?<span[^>]*>([^<]+)<\/span>/g;
-    
-    let match;
-    while ((match = skillPattern.exec(html)) !== null) {
-      const [, owner, repo, skillName, displayName, repoPath, installsStr] = match;
-      
-      // Parse install count (e.g., "30.4K" -> 30400)
-      const installs = this.parseInstallCount(installsStr);
-      
-      skills.push({
-        name: skillName,
-        owner,
-        repo,
-        installs,
-        description: `${displayName} from ${repoPath}`,
-        metadata: {
-          trending: false
-        }
-      });
-    }
-    
-    // If the above pattern doesn't work, try a simpler pattern
-    if (skills.length === 0) {
-      // Fallback: extract from href patterns
-      const hrefPattern = /href="\/([^/]+)\/([^/]+)\/([^"]+)"/g;
-      const installPattern = /<span[^>]*font-mono[^>]*>([0-9.KM]+)<\/span>/g;
-      
-      const hrefs: Array<{owner: string; repo: string; name: string}> = [];
-      while ((match = hrefPattern.exec(html)) !== null) {
-        const [, owner, repo, name] = match;
-        // Skip non-skill links
-        if (owner && repo && name && !name.includes('?') && !name.includes('#')) {
-          hrefs.push({ owner, repo, name });
-        }
-      }
-      
-      const installCounts: number[] = [];
-      while ((match = installPattern.exec(html)) !== null) {
-        installCounts.push(this.parseInstallCount(match[1]));
-      }
-      
-      // Match hrefs with install counts
-      for (let i = 0; i < Math.min(hrefs.length, installCounts.length); i++) {
-        const { owner, repo, name } = hrefs[i];
-        skills.push({
-          name,
-          owner,
-          repo,
-          installs: installCounts[i],
-          description: `${name} from ${owner}/${repo}`,
-          metadata: {
-            trending: false
-          }
-        });
-      }
-    }
-    
-    return skills;
-  }
+  async getLeaderboard(timeframe: 'all' | '24h' = 'all', limit: number = 50): Promise<SkillShEntry[]> {
+    const apiKey = process.env.SKILLS_SH_API_KEY;
 
-  /**
-   * Parse install count string to number
-   * 
-   * Converts human-readable install counts to numeric values.
-   * Examples: "30.4K" -> 30400, "1.5M" -> 1500000, "973" -> 973
-   * 
-   * @param str - Install count string (e.g., "30.4K", "1.5M", "973")
-   * @returns Numeric install count
-   */
-  private parseInstallCount(str: string): number {
-    const cleaned = str.trim();
-    
-    // Handle thousands (K suffix)
-    if (cleaned.endsWith('K')) {
-      return Math.floor(parseFloat(cleaned.slice(0, -1)) * 1000);
+    if (apiKey) {
+      return this.getLeaderboardWithApiKey(apiKey, timeframe, limit);
     }
-    
-    // Handle millions (M suffix)
-    if (cleaned.endsWith('M')) {
-      return Math.floor(parseFloat(cleaned.slice(0, -1)) * 1000000);
-    }
-    
-    // Handle plain numbers
-    return parseInt(cleaned, 10) || 0;
-  }
 
-  /**
-   * Search skills.sh for skills matching a query
-   */
-  async searchSkillsSh(query: string): Promise<SkillShEntry[]> {
-    const skills = await this.fetchSkillsDirectory();
-    const normalizedQuery = query.toLowerCase();
-    
-    return skills.filter(skill => 
-      skill.name.toLowerCase().includes(normalizedQuery) ||
-      (skill.description && skill.description.toLowerCase().includes(normalizedQuery)) ||
-      skill.owner.toLowerCase().includes(normalizedQuery) ||
-      skill.repo.toLowerCase().includes(normalizedQuery)
+    // No API key - this endpoint requires authentication
+    throw new Error(
+      'The leaderboard endpoint requires a SKILLS_SH_API_KEY environment variable. ' +
+      'Set SKILLS_SH_API_KEY to use the /api/v1/skills endpoint. ' +
+      'Alternatively, use the search_skills tool which works without authentication.'
     );
   }
 
   /**
-   * Get the leaderboard from skills.sh
+   * Fetch leaderboard using the authenticated v1 API
    */
-  async getLeaderboard(timeframe: 'all' | '24h' = 'all'): Promise<SkillShEntry[]> {
+  private async getLeaderboardWithApiKey(
+    apiKey: string,
+    timeframe: 'all' | '24h',
+    limit: number
+  ): Promise<SkillShEntry[]> {
     try {
-      // Fetch appropriate page
-      const url = timeframe === '24h' ? 'https://skills.sh/trending' : 'https://skills.sh';
-      const response = await fetch(url);
-      
+      const view = timeframe === '24h' ? 'trending' : 'all-time';
+      const url = `https://skills.sh/api/v1/skills?view=${view}&limit=${limit}&offset=0`;
+
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Accept': 'application/json'
+        }
+      });
+
       if (!response.ok) {
         const error = new NetworkError(
-          'Failed to fetch leaderboard',
+          'Failed to fetch leaderboard from skills.sh v1 API',
           url,
-          { 
+          {
             statusCode: response.status,
             context: { statusText: response.statusText, timeframe }
           }
@@ -393,19 +356,20 @@ export class SkillResolver {
         ErrorLogger.log(error);
         throw error;
       }
-      
-      const html = await response.text();
-      const skills = this.parseSkillsFromHTML(html);
-      
-      // Mark trending skills
-      if (timeframe === '24h') {
-        skills.forEach(skill => {
-          if (skill.metadata) {
-            skill.metadata.trending = true;
-          }
-        });
-      }
-      
+
+      const data = await response.json() as any;
+      const skills: SkillShEntry[] = (data.skills || []).map((entry: any, index: number) => ({
+        name: entry.name,
+        owner: entry.owner,
+        repo: entry.repo,
+        installs: entry.installs || 0,
+        description: entry.description || `${entry.name} from ${entry.owner}/${entry.repo}`,
+        id: entry.id,
+        metadata: {
+          trending: timeframe === '24h'
+        }
+      }));
+
       return skills;
     } catch (error) {
       if (error instanceof NetworkError) {
@@ -413,9 +377,9 @@ export class SkillResolver {
       }
       const wrappedError = new NetworkError(
         'Failed to fetch leaderboard',
-        timeframe === '24h' ? 'https://skills.sh/trending' : 'https://skills.sh',
-        { 
-          context: { 
+        `https://skills.sh/api/v1/skills`,
+        {
+          context: {
             originalError: error instanceof Error ? error.message : String(error),
             timeframe
           }
@@ -424,5 +388,100 @@ export class SkillResolver {
       ErrorLogger.log(wrappedError);
       throw wrappedError;
     }
+  }
+
+  /**
+   * List skills using the authenticated v1 API
+   *
+   * Requires SKILLS_SH_API_KEY env var.
+   */
+  async listSkills(page: number = 1, pageSize: number = 50): Promise<{ skills: SkillShEntry[]; total: number }> {
+    const apiKey = process.env.SKILLS_SH_API_KEY;
+
+    if (!apiKey) {
+      throw new Error(
+        'The list_skills tool requires a SKILLS_SH_API_KEY environment variable to paginate all skills. ' +
+        'Set SKILLS_SH_API_KEY to use the /api/v1/skills endpoint. ' +
+        'Alternatively, use the search_skills tool which works without authentication.'
+      );
+    }
+
+    try {
+      const offset = (page - 1) * pageSize;
+      const url = `https://skills.sh/api/v1/skills?view=all-time&limit=${pageSize}&offset=${offset}`;
+
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Accept': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        const error = new NetworkError(
+          'Failed to list skills from skills.sh v1 API',
+          url,
+          {
+            statusCode: response.status,
+            context: { statusText: response.statusText }
+          }
+        );
+        ErrorLogger.log(error);
+        throw error;
+      }
+
+      const data = await response.json() as any;
+      const skills: SkillShEntry[] = (data.skills || []).map((entry: any) => ({
+        name: entry.name,
+        owner: entry.owner,
+        repo: entry.repo,
+        installs: entry.installs || 0,
+        description: entry.description || `${entry.name} from ${entry.owner}/${entry.repo}`,
+        id: entry.id,
+        metadata: {
+          trending: false
+        }
+      }));
+
+      return {
+        skills,
+        total: data.total || skills.length
+      };
+    } catch (error) {
+      if (error instanceof NetworkError) {
+        throw error;
+      }
+      const wrappedError = new NetworkError(
+        'Failed to list skills',
+        'https://skills.sh/api/v1/skills',
+        {
+          context: {
+            originalError: error instanceof Error ? error.message : String(error)
+          }
+        }
+      );
+      ErrorLogger.log(wrappedError);
+      throw wrappedError;
+    }
+  }
+
+  /**
+   * Parse install count string to number
+   *
+   * Converts human-readable install counts to numeric values.
+   * Examples: "30.4K" -> 30400, "1.5M" -> 1500000, "973" -> 973
+   */
+  private parseInstallCount(str: string): number {
+    const cleaned = str.trim();
+
+    if (cleaned.endsWith('K')) {
+      return Math.floor(parseFloat(cleaned.slice(0, -1)) * 1000);
+    }
+
+    if (cleaned.endsWith('M')) {
+      return Math.floor(parseFloat(cleaned.slice(0, -1)) * 1000000);
+    }
+
+    return parseInt(cleaned, 10) || 0;
   }
 }

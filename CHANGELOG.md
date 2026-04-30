@@ -5,6 +5,24 @@ All notable changes to the Skill Loader MCP Server will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-04-30
+
+### Changed
+- **Breaking: skills.sh API migration** — Replaced HTML scraping with the official `GET /api/search?q=<query>` endpoint. The old `parseSkillsFromHTML()` approach is removed entirely since skills.sh moved to a Next.js RSC app.
+- `search_skills` now calls the search API directly (no authentication required).
+- `list_skills` and `get_leaderboard` now require a `SKILLS_SH_API_KEY` environment variable to use the authenticated `/api/v1/skills` endpoint. Without the key, they return a helpful error directing users to `search_skills`.
+- Updated Power format output (`convert_to_power`) to optionally generate `mcp.json` (when skill has dependencies/tools) and `steering/` directory (when skill has 3+ complex sections).
+
+### Added
+- `SkillsShSearchResponse`, `SkillsShSearchEntry`, `SkillsShV1Response`, `SkillsShV1Entry` types for the new API responses.
+- `id`, `skillId`, `source` fields on `SkillShEntry`.
+- `listSkills()` method on `SkillResolver` for authenticated paginated listing.
+- `mcp.json` generation in Power conversion for skills with dependencies or MCP server references.
+- `steering/` directory generation in Power conversion for skills with multiple complex sections.
+
+### Fixed
+- Skills.sh integration no longer depends on fragile HTML parsing that broke when the site migrated to Next.js RSC.
+
 ## [1.0.0] - 2026-02-03
 
 ### Added

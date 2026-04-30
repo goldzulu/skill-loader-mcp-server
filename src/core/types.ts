@@ -18,6 +18,9 @@ export interface SkillShEntry {
   repo: string;
   installs: number;
   description?: string;
+  id?: string;
+  skillId?: string;
+  source?: string;
   metadata?: {
     trending?: boolean;
   };
@@ -27,6 +30,40 @@ export interface SkillShMetadata {
   installs: number;
   trending: boolean;
   rank?: number;
+}
+
+// skills.sh API response types
+export interface SkillsShSearchResponse {
+  query: string;
+  searchType: string;
+  skills: SkillsShSearchEntry[];
+  count: number;
+  duration_ms: number;
+}
+
+export interface SkillsShSearchEntry {
+  id: string;
+  skillId: string;
+  name: string;
+  installs: number;
+  source: string;
+}
+
+export interface SkillsShV1Response {
+  skills: SkillsShV1Entry[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+export interface SkillsShV1Entry {
+  id: string;
+  name: string;
+  owner: string;
+  repo: string;
+  installs: number;
+  description?: string;
+  trending?: boolean;
 }
 
 // Skill Fetcher Types

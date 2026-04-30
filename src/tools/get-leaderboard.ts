@@ -1,7 +1,8 @@
 /**
  * Get Leaderboard Tool
- * 
- * Gets trending or top-installed skills from skills.sh
+ *
+ * Gets trending or top-installed skills from skills.sh.
+ * Requires SKILLS_SH_API_KEY environment variable for the v1 API.
  */
 
 import { SkillResolver } from '../core/skill-resolver.js';
@@ -27,26 +28,24 @@ export interface GetLeaderboardResult {
 
 /**
  * Get the leaderboard from skills.sh
- * 
- * Fetches either the all-time leaderboard or 24-hour trending skills.
- * Returns skills sorted by install count or trending score.
- * 
+ *
+ * Requires SKILLS_SH_API_KEY to use the /api/v1/skills endpoint with view=trending or view=all-time.
+ * Without an API key, returns an error directing users to use search_skills instead.
+ *
  * @param args - Leaderboard parameters (timeframe, limit)
  * @returns Leaderboard skills with rankings
  */
 export async function getLeaderboardHandler(args: GetLeaderboardArgs): Promise<GetLeaderboardResult> {
   const resolver = new SkillResolver();
-  
-  // Fetch leaderboard
+
   const timeframe = args.timeframe || 'all';
-  const leaderboard = await resolver.getLeaderboard(timeframe);
-  
-  // Apply limit
   const limit = Math.min(args.limit || 20, 50);
-  const limitedResults = leaderboard.slice(0, limit);
-  
+
+  // Use the authenticated v1 API (throws if no API key)
+  const leaderboard = await resolver.getLeaderboard(timeframe, limit);
+
   // Format skills for output with rank
-  const skills = limitedResults.map((skill, index) => ({
+  const skills = leaderboard.map((skill, index) => ({
     name: skill.name,
     description: skill.description || '',
     owner: skill.owner,
@@ -55,7 +54,7 @@ export async function getLeaderboardHandler(args: GetLeaderboardArgs): Promise<G
     rank: index + 1,
     trending: skill.metadata?.trending || false,
   }));
-  
+
   return {
     skills,
     timeframe,

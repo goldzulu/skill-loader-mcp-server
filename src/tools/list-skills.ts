@@ -1,7 +1,8 @@
 /**
  * List Skills Tool
- * 
- * Lists all available skills from skills.sh with pagination
+ *
+ * Lists all available skills from skills.sh with pagination.
+ * Requires SKILLS_SH_API_KEY environment variable for the v1 paginated API.
  */
 
 import { SkillResolver } from '../core/skill-resolver.js';
@@ -26,40 +27,34 @@ export interface ListSkillsResult {
 
 /**
  * List all available skills from skills.sh
- * 
- * Fetches the skills directory and returns paginated results.
- * Caches the directory for 1 hour to reduce API calls.
- * 
+ *
+ * Requires SKILLS_SH_API_KEY to use the paginated /api/v1/skills endpoint.
+ * Without an API key, returns an error directing users to use search_skills instead.
+ *
  * @param args - Pagination parameters (page, pageSize)
  * @returns Paginated list of skills with metadata
  */
 export async function listSkillsHandler(args: ListSkillsArgs): Promise<ListSkillsResult> {
   const resolver = new SkillResolver();
-  
-  // Fetch all skills from leaderboard
-  const leaderboard = await resolver.getLeaderboard('all');
-  
-  // Apply pagination
+
   const page = args.page || 1;
   const pageSize = Math.min(args.pageSize || 50, 100);
-  const start = (page - 1) * pageSize;
-  const end = start + pageSize;
-  
-  // Extract paginated skills
-  const paginatedSkills = leaderboard.slice(start, end);
-  
+
+  // Use the authenticated v1 API (throws if no API key)
+  const { skills: allSkills, total } = await resolver.listSkills(page, pageSize);
+
   // Format skills for output
-  const skills = paginatedSkills.map(skill => ({
+  const skills = allSkills.map(skill => ({
     name: skill.name,
     description: skill.description || '',
     owner: skill.owner,
     repo: skill.repo,
     installs: skill.installs,
   }));
-  
+
   return {
     skills,
-    total: leaderboard.length,
+    total,
     page,
     pageSize,
   };

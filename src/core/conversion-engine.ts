@@ -350,10 +350,10 @@ export class ConversionEngine {
   toPower(skill: ParsedSkill, sourceUrl: string = ''): PowerStructure {
     // Generate kebab-case power name
     const powerName = this.toKebabCase(skill.frontmatter.name);
-    
+
     // Extract keywords from description (simple approach: take first few meaningful words)
     const keywords = this.extractKeywords(skill.frontmatter.description);
-    
+
     // Create Kiro POWER.md frontmatter
     const powerFrontmatter = {
       name: powerName,
@@ -362,19 +362,19 @@ export class ConversionEngine {
       keywords: keywords,
       author: 'Imported from Claude Skills'
     };
-    
+
     // Build POWER.md content
     const frontmatterYaml = yaml.dump(powerFrontmatter);
     let powerContent = `---\n${frontmatterYaml}---\n\n`;
-    
+
     // Add skill name as main heading if not already present
     if (!skill.body.trim().startsWith('#')) {
       powerContent += `# ${skill.frontmatter.name}\n\n`;
     }
-    
+
     // Preserve skill instructions in body
     powerContent += skill.body;
-    
+
     // Add dependencies section if present
     if (skill.frontmatter.dependencies && skill.frontmatter.dependencies.length > 0) {
       powerContent += `\n\n## Dependencies\n\n`;
@@ -382,7 +382,7 @@ export class ConversionEngine {
         powerContent += `- ${dep}\n`;
       }
     }
-    
+
     // Add import metadata
     const now = new Date();
     powerContent += `\n\n---\n\n## Import Metadata\n\n`;
@@ -392,17 +392,101 @@ export class ConversionEngine {
     }
     powerContent += `- **Imported At**: ${now.toISOString()}\n`;
     powerContent += `- **Imported Via**: Skill Loader Power\n`;
-    
+
+    // Build the files array
+    const files: Array<{ path: string; content: string }> = [
+      {
+        path: 'POWER.md',
+        content: powerContent
+      }
+    ];
+
+    // Generate mcp.json when skill has dependencies or tool references
+    if (this.shouldGenerateMcpJson(skill)) {
+      const mcpJson = this.generateMcpJson(skill);
+      files.push({
+        path: 'mcp.json',
+        content: JSON.stringify(mcpJson, null, 2)
+      });
+    }
+
+    // Generate steering/ file for skills with multiple complex sections
+    if (this.shouldGenerateSteeringDir(skill)) {
+      const steeringContent = this.generateSteeringContent(skill);
+      files.push({
+        path: `steering/${powerName}-guidelines.md`,
+        content: steeringContent
+      });
+    }
+
     // Return PowerStructure with files
     return {
       powerName,
-      files: [
-        {
-          path: 'POWER.md',
-          content: powerContent
-        }
-      ]
+      files
     };
+  }
+
+  /**
+   * Check if the skill warrants an mcp.json file
+   */
+  private shouldGenerateMcpJson(skill: ParsedSkill): boolean {
+    const hasDeps = skill.frontmatter.dependencies && skill.frontmatter.dependencies.length > 0;
+    const hasTools = skill.frontmatter.tools || skill.frontmatter.mcpServers;
+    return !!(hasDeps || hasTools);
+  }
+
+  /**
+   * Generate mcp.json content for a skill's dependencies/tools
+   */
+  private generateMcpJson(skill: ParsedSkill): Record<string, any> {
+    const mcpConfig: Record<string, any> = {
+      mcpServers: {}
+    };
+
+    // Add MCP server entries from frontmatter if specified
+    if (skill.frontmatter.mcpServers && typeof skill.frontmatter.mcpServers === 'object') {
+      mcpConfig.mcpServers = skill.frontmatter.mcpServers;
+    }
+
+    // Add dependencies as comments/metadata
+    if (skill.frontmatter.dependencies && skill.frontmatter.dependencies.length > 0) {
+      mcpConfig.dependencies = skill.frontmatter.dependencies;
+    }
+
+    return mcpConfig;
+  }
+
+  /**
+   * Check if the skill should get a steering/ directory
+   */
+  private shouldGenerateSteeringDir(skill: ParsedSkill): boolean {
+    // Generate steering dir for skills with 3+ sections at level 2 or deeper
+    const complexSections = skill.sections.filter(s => s.level >= 2 && s.content.length > 200);
+    return complexSections.length >= 3;
+  }
+
+  /**
+   * Generate steering file content from complex skill sections
+   */
+  private generateSteeringContent(skill: ParsedSkill): string {
+    const steeringFrontmatter = {
+      original_skill: skill.frontmatter.name,
+      type: 'guidelines'
+    };
+
+    const frontmatterYaml = yaml.dump(steeringFrontmatter);
+    let content = `---\n${frontmatterYaml}---\n\n`;
+    content += `# ${skill.frontmatter.name} Guidelines\n\n`;
+
+    // Include the complex sections
+    for (const section of skill.sections) {
+      if (section.level >= 2 && section.content.length > 200) {
+        const hashes = '#'.repeat(section.level);
+        content += `${hashes} ${section.heading}\n\n${section.content}\n\n`;
+      }
+    }
+
+    return content;
   }
   
   /**

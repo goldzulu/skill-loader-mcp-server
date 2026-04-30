@@ -1,7 +1,7 @@
 /**
  * Search Skills Tool
- * 
- * Searches for skills by keyword in name or description
+ *
+ * Searches for skills by keyword using the skills.sh search API
  */
 
 import { SkillResolver } from '../core/skill-resolver.js';
@@ -26,10 +26,10 @@ export interface SearchSkillsResult {
 
 /**
  * Search for skills by keyword
- * 
- * Searches the skills.sh directory for skills matching the query.
- * Returns results sorted by relevance (install count).
- * 
+ *
+ * Uses the skills.sh search API (GET /api/search?q=<query>).
+ * No authentication required.
+ *
  * @param args - Search parameters (query, limit)
  * @returns Matching skills sorted by relevance
  */
@@ -37,19 +37,19 @@ export async function searchSkillsHandler(args: SearchSkillsArgs): Promise<Searc
   if (!args.query || args.query.trim().length === 0) {
     throw new Error('Search query is required');
   }
-  
+
   const resolver = new SkillResolver();
-  
-  // Search skills.sh
+
+  // Search skills.sh via the API
   const results = await resolver.searchSkillsSh(args.query);
-  
+
   // Sort by install count (relevance)
   results.sort((a, b) => b.installs - a.installs);
-  
+
   // Apply limit
   const limit = Math.min(args.limit || 20, 50);
   const limitedResults = results.slice(0, limit);
-  
+
   // Format skills for output with relevance score
   const skills = limitedResults.map((skill, index) => ({
     name: skill.name,
@@ -59,7 +59,7 @@ export async function searchSkillsHandler(args: SearchSkillsArgs): Promise<Searc
     installs: skill.installs,
     relevance: results.length - index, // Higher rank = higher relevance
   }));
-  
+
   return {
     skills,
     query: args.query,

@@ -33,7 +33,7 @@ export class SkillLoaderMCPServer {
     this.server = new Server(
       {
         name: 'skill-loader',
-        version: '1.0.0',
+        version: '1.1.0',
       },
       {
         capabilities: {
